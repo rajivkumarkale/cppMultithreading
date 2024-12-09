@@ -1,0 +1,146 @@
+1. Multithreading with c++11
+    => Prior to C++11, pthread library was used.
+    => C++11 introduced std::thread class, which is portable, very low level, just a wrapper of software thread.
+        -> C++14
+            . Read-write locks
+        -> C++17
+            . Many standard algorithms can execute in parallel.
+        -> C++20
+            . Joining threads
+            . Thread cancellation
+            . Coroutines, semaphores, latches and barriers
+        -> C++23
+            . Improved support for coroutines 
+
+2. Launching a thread
+    => #include <thread>
+    => constructor starts a new execution thread, this will execute immediately.
+
+    => Thread Entry Point:
+        -> std::thread's constructor takes a callable object.
+            i.e. the thread's entry point function
+
+        -> The execution thread will invoke this function.
+        -> The entry point function:
+            -> can be any callable object.
+            -> cannot be overloaded.
+            -> any return value is ignored.
+        
+3. Thread Termination
+    => The parent thread completes its execution
+        -> The std::thread object goes out of scope.
+        -> Its destructor is called.
+    
+    => This can happend while the child is still running
+        -> by default, the destructor calls std::terminate()
+        -> This terminates all threads, including main().
+
+============================================================
+#include <iostream>
+#include <thread>
+
+void hello_world() { std::cout << "Hello World from Thread! " << std::endl; }
+
+int main() {
+    std::thread thread1(hello_world);
+
+    return 0;
+}
+
+---------------------------
+
+=> The above program contains an issue related to proper thread management.
+
+=> Program Overview:
+    1. hello_world Function:
+        A simple function that prints "Hello World from Thread!".
+
+    2. std::thread thread1(hello_world);:
+        A thread object is created (thread1) that runs the hello_world function in parallel with the main thread.
+
+    3. End of main():
+        The main() function reaches the end and returns immediately.
+    
+=> Problem : Missing Thread Join or Detach
+    -> When creating a thread (std::thread), you must either:
+        1. Join the thread (thread1.join()): This makes the main thread wait for thread1 to finish execution before proceeding.
+        2. Detach the thread (thread1.detach()): This allows thread1 to execute independently, even if main() finishes.
+
+    -> In this program, neither join() nor detach() is called, causing undefined behavior when the main function ends.
+
+=> Possible Outcomes:
+    -> Crash or Undefined Behavior: 
+        The std::thread destructor will be called as the thread1 object goes out of scope when main() ends. 
+        If the thread is still joinable (not joined or detached), the program will terminate with std::terminate().
+
+    -> Successful Execution (Unlikely): 
+        If the thread happens to finish its execution before main() ends, it might work, but this is unreliable and non-deterministic.
+----------------
+
+=> The Life Cycle of a std::thread Object
+    1. Creating a Thread:
+        ->  When we create a thread object like std::thread thread1(hello_world);, 
+            the operating system spawns a new thread to execute the function hello_world().
+    
+    2. Thread's Joinable State:
+        -> A thread is considered joinable if it has been started but neither join() nor detach() has been called.
+        -> The thread remains in this state until explicitly managed (joined or detached).
+    
+    3. std::thread Destructor:
+        -> When a std::thread object (like thread1) goes out of scope, its destructor is called.
+        -> Before destroying the thread object, the destructor checks if the thread is still in the joinable state.
+
+=> What Happens if the Thread is Still Joinable?
+    -> Undefined Behavior:
+        -> If the std::thread object is destroyed while the thread is joinable, 
+           it results in undefined behavior because the thread might still be running or waiting to execute.
+
+    -> Guaranteed Program Termination:
+        -> To avoid undefined behavior, the C++ standard library enforces a fail-safe: 
+           If a thread is joinable when its destructor is invoked, the program calls std::terminate(), which abruptly ends the program. 
+           This is a safety mechanism to prevent resource leaks or race conditions.
+
+=> Why Does This Happen?
+    -> Threads represent system resources, and leaving a thread running when its std::thread object is destroyed can cause issues:
+        1. Resource Leaks: The OS thread resources won't be cleaned up properly.
+        2. Race Conditions: The thread might access resources that are no longer valid, leading to unpredictable behavior.
+    
+    -> By enforcing this rule, the C++ standard ensures the programmer explicitly manages the thread lifecycle.
+
+-------------
+=> Key Effects of Calling detach()
+    1. Thread Ownership is Released:
+        -> The std::thread object no longer manages the thread. The thread becomes a "detached thread."
+        -> The operating system takes over the responsibility for the detached thread's lifecycle.
+    
+    2. Independent Execution:
+        -> The detached thread will run independently until it completes its execution.
+        -> It is not tied to the lifetime of the std::thread object or the main program.
+
+    3. Resource Management:
+        -> Once the detached thread finishes, the operating system automatically reclaims its resources (like thread handles, memory, etc.).
+
+=> Consequences of Detaching a Thread
+    => Pros:
+        -> No Waiting:
+            . The main thread doesn't have to wait for the detached thread to complete, enabling parallelism without blocking.
+        -> Simplicity:
+            . No need to explicitly manage the thread's completion using join().
+    => Cons:
+        -> No Control:
+            . After detaching, you cannot interact with the thread (e.g., you can't wait for it to finish or check its state).
+        -> Risk of Undefined Behavior:
+            . If the detached thread tries to access resources (e.g., variables or objects) that are destroyed when main() or another thread finishes, 
+               it may lead to crashes or undefined behavior (e.g., dangling pointers, race conditions).
+        -> Harder Debugging:
+            . Debugging detached threads can be challenging because they execute independently, and it's difficult to trace their state after detachment.
+
+=> Important Notes:
+    1. Ensure Safe Access:
+        -> Detached threads should not access variables or objects in the main thread unless you can guarantee their validity (e.g., using dynamic memory or proper synchronization).
+    2. Program Termination:
+        -> If the main thread finishes before the detached thread completes, the program exits regardless of the detached thread's status.
+    3. Use Cases for detach():
+        -> Suitable for tasks where you don't need to synchronize or interact with the thread after starting it, such as background logging or cleanup.
+    
+    => In general, use detach() sparingly and only when you're sure the detached thread won't outlive its resources or create undefined behavior.
