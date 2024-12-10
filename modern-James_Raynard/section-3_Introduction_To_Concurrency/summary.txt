@@ -144,3 +144,131 @@ int main() {
         -> Suitable for tasks where you don't need to synchronize or interact with the thread after starting it, such as background logging or cleanup.
     
     => In general, use detach() sparingly and only when you're sure the detached thread won't outlive its resources or create undefined behavior.
+
+
+======================== 
+
+=> Threads with arguments:
+    -> We can pass arguments to the entry point function.
+    -> We list them as extra arguments to the constructor.
+    -> e.g.
+        // Thread entry point function
+        void hello(std::string);
+
+        // hello() takes a string arguments
+        std::thread thread1(hello, "Hello, Thread!");
+
+    -> The std::thread object owns the arguments 
+        -> lvalue arguments are passed by value.
+        -> rvalue arguments are passed by move.
+
+    -> To pass by move, we must provide an rvale.
+        -> The argument must have a move constructor 
+
+        // Callabel object - thread entry point 
+        void func(std::string &&);
+
+        std::string str = "abc";
+
+        // wrap the argument in a call to std::move 
+        std::thread thread2(func, std::move(str));
+
+=> Thread Function with reference argument.
+    -> When we pass arguments to a thread's constructor, they are copied by default. 
+       This ensures the callable object (and its arguments) are valid for the lifetime of the thread.
+
+    -> Even if we use & in the thread function's parameter, the argument will still be copied by value when you pass it to the thread constructor, unless you explicitly use std::ref() or std::cref().
+        if we directly pass variable , then it will be error.
+        This behavior occurs because the std::thread constructor always attempts to make a copy (or move) of the arguments you pass to it to ensure they are valid for the thread's lifetime.
+    
+    -> use a reference wrapper.
+        -> wrap the argument in a call to std::ref()
+        // callable object-thread entry point 
+        void hello(std::string &);
+
+        std::string str="abc";
+
+        //wrap the arguement in a call to std::ref()
+        std::thread thread3(hello, std::ref(str));
+    
+    -> use std::cref() for a const reference 
+    -> Be aware of dangling references!
+        When using std::ref() or std::cref(), ensure that the referenced object outlives the thread's execution. 
+        Otherwise, you'll have a dangling reference, which leads to undefined behavior.
+
+        e.g. 
+            void hello(std::string& str) {
+                std::cout << "Thread received: " << str << std::endl;
+            }
+
+            int main() {
+                std::thread thread3;
+                {
+                    std::string str = "Hello";
+                    thread3 = std::thread(hello, std::ref(str)); // str goes out of scope
+                }
+                thread3.join(); // Undefined behavior: str no longer exists
+                return 0;
+            }
+
+=> Member functions as Entry Point:
+    -> We can use a member function as the entry point
+    -> Requires an object of the class.
+    -> e.g.
+        class Greeter {
+        public:
+            void hello() { std::cout << "hello from member function" << std::endl; }
+        };
+
+        // Pass a pointer to the member function and a pointer to the object.
+        Greeter greet;
+        std::thread thread6(&Greeter::hello, &greet);
+
+=> lambda expression as entry point:
+    int i= 3;
+
+    // capture by reference
+    std::thread thr([&i](){
+        i*=2;
+    });
+    thr.join();
+    std::cout << "i: " << i << std::endl; // 6
+
+=> we can pass argument to lambda expression:
+    std::thread thr(
+        [](int i1, int i2){
+            std::cout << i1 + i2 << std::endl;
+        },
+
+        // The remaining arguments are passed to the lambda expression;
+        2, 3
+    );
+
+=======================================================================
+
+=> Multi-threaded Program is run on the computer with single processor by "time slicing".
+
+=> Thread scheduling:
+    -> Threds may start in any order.
+    -> A thread may be interrupted at any time.
+    -> A thread may be restarted at any time.
+    -> While a thread is sleeping, another thread may run:
+        -> This can run the same code as the inactive thread.
+        -> It can access data which it shares with the inactive thread.
+
+=> Disadvantages of Time Slicing:
+    -> Requires a "context switch"
+    -> Save the processor state for the current thread
+        -> current values of the processor register.
+        -> Program's intstruction pointer.
+    -> Load the saved processor state for the next thread.
+        -> Values of processor register when stopped, etc.
+        -> May also have to reload the thread's instructions and data.
+    
+    -> The processor can not execute any instructions during a context switch.
+
+    -> Why Context Switches Are Expensive
+        -> CPU Idle Time: During a context switch, the CPU is not executing useful instructions. Instead, it is saving and restoring states.
+        -> Cache Flush: Switching threads may invalidate parts of the CPU cache, forcing the processor to reload data, which is time-consuming.
+        -> Memory Overhead: The kernel must maintain additional data structures (e.g., TCBs, queues) for managing threads.
+        -> Hardware Constraints: Some registers (e.g., SIMD, floating-point) may require more time to save and restore due to their size.

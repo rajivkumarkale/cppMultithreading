@@ -1,0 +1,106 @@
+=> System Thread Interface:
+    -> std::thread uses the system's thread implementation.
+    -> We may need to use the thread implementation directly.
+    -> Some functionality is not available in standard C++.
+    -> Thread Priority:
+        -> Give a thread higher or lower share of processor time.
+    -> Thread affinity
+        -> "Pin" a thread on a specific processor core.
+
+=> native_handle()
+    -> Each execution thread has a "handle"
+        -> Used internally by the system's thread implementation.
+        -> Needed when making calls into the implementation's API.
+    -> Returned by the native_handle() member function.
+        e.g.
+            std::thread thr(hello);
+            thr.native_handle();
+
+=> std::thread ID 
+    -> Each execution thread has a thread identifier.
+        -> Used internally by the system's implementation.
+    -> Guaranteed to be unique.
+        -> If two thread identifiers are equal, the related objects are identical.
+        -> Could be used to store std::thread objects in associative containers,
+             e.g. a map where key is thread id and value is thread object.
+        -> A new thread may get the ID of an earlier thread which has completed execution.
+        -> e.g.
+            //1. Returns the identifier of the current thread 
+            std::this_thread::get_id();
+
+            //2. Returns the identifier associated with an std::thread object.
+            thr.get_id();
+
+=> Pausing Threads:
+    -> We can pause a thread or make it "sleep"
+        std::this_thread::sleep_for
+    
+    -> Takes an argument of type std::chrono::duration 
+       The actual time slept may be longer than the specified duration because std::this_thread::sleep_for relies on the underlying operating system's scheduler.
+       The scheduler might be busy handling other threads or delays waking up the sleeping thread due to preemption or resource contention.
+       so, sleep_for guarantees the thread will sleep for at least the specified duration, but it might wake up later than expected.
+
+        //c++14
+        std::this_thread::sleep_for(2s);
+
+        //c++11
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    -> This also works with single-threaded programs
+
+=================================================================================================
+
+=> The C++ Thread Class:
+    -> Implemented using RAII
+        -> Similar to std::unique_ptr, std::fstream, etc.
+        -> The constructor acquires a resource
+        -> The destructor releases the resource
+    
+    -> An std::thread object has ownership of an execution thread
+        -> Only one object can be bound to an execution thread at a time.
+
+=> std::thread and move semantics:
+    -> Move-only class (non-copyable)
+        -> std::thread objects cannot be compied.
+
+    -> Move operations
+        -> Transfer ownership of the execution thread.   (b = std::move(a))
+        -> The moved-from object is no longer associated with an execution thread.      
+
+=> Passing a std::thread Object 
+    -> Must use pass by move.
+        // Function taking a thread object as argument
+        void func(std::thread thr);
+
+        // Pass a named object 
+        // Use std::move() to cast it to rvalue
+        std::thread thr(...);
+        func(std::move(thr));
+
+        // Pass a temporary object 
+        func(std::thread(...));
+
+=> Returning a std::thread Object 
+    -> The compiler will automatically move it for us.
+        // Function returning a std::thread object 
+        std::thread func(){
+            // Return a local variable
+            std::thread thr(...);
+            return thr;   // don't explictly use return std::move(thr); as it may confuse the compiler optimzer.
+
+            // Return a temporary object
+            // return std::thread(...);
+        }
+
+=> Threads and Exceptions:
+    -> Each thread has its own execution stack.
+    -> This stack is "unwound" when the thread throws an exception.
+        -> The destructor for all objects in scope are called.
+        -> The program moves up the thread's stack until it finds a suitable handler.
+        -> If o handler is found, the program is terminated.
+    -> Other threads in the program cannot catch the exception.
+        -> including the parent thread and the main thread.
+    -> Exceptions can only be handled in the thread where they occur.
+        -> Use a try/catch block in the normal way.
+    
+    
